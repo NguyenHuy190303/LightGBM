@@ -1,195 +1,195 @@
-Features
-========
+Tính năng
+=========
 
-This is a conceptual overview of how LightGBM works\ `[1] <#references>`__. We assume familiarity with decision tree boosting algorithms to focus instead on aspects of LightGBM that may differ from other boosting packages. For detailed algorithms, please refer to the citations or source code.
+Đây là cái nhìn tổng quan khái niệm về cách LightGBM hoạt động `[1] <#references>`. Chúng tôi giả định rằng bạn đã quen thuộc với các thuật toán tăng cường cây quyết định để tập trung vào các khía cạnh của LightGBM có thể khác biệt so với các gói tăng cường khác. Để biết chi tiết về các thuật toán, vui lòng tham khảo các tài liệu trích dẫn hoặc mã nguồn.
 
-Optimization in Speed and Memory Usage
+Tối ưu hóa về tốc độ và sử dụng bộ nhớ
 --------------------------------------
 
-Many boosting tools use pre-sort-based algorithms\ `[2, 3] <#references>`__ (e.g. default algorithm in xgboost) for decision tree learning. It is a simple solution, but not easy to optimize.
+Nhiều công cụ tăng cường sử dụng các thuật toán dựa trên sắp xếp trước `[2, 3] <#references>` (ví dụ, thuật toán mặc định trong xgboost) để học cây quyết định. Đây là một giải pháp đơn giản, nhưng không dễ tối ưu hóa.
 
-LightGBM uses histogram-based algorithms\ `[4, 5, 6] <#references>`__, which bucket continuous feature (attribute) values into discrete bins. This speeds up training and reduces memory usage. Advantages of histogram-based algorithms include the following:
+LightGBM sử dụng các thuật toán dựa trên biểu đồ tần suất `[4, 5, 6] <#references>`, trong đó chia giá trị của các thuộc tính liên tục thành các nhóm rời rạc. Điều này giúp tăng tốc độ huấn luyện và giảm sử dụng bộ nhớ. Các lợi thế của các thuật toán dựa trên biểu đồ tần suất bao gồm:
 
--  **Reduced cost of calculating the gain for each split**
+-  **Giảm chi phí tính toán độ lợi cho mỗi lần chia**
 
-   -  Pre-sort-based algorithms have time complexity ``O(#data)``
+   -  Các thuật toán dựa trên sắp xếp trước có độ phức tạp thời gian là ``O(#data)``
 
-   -  Computing the histogram has time complexity ``O(#data)``, but this involves only a fast sum-up operation. Once the histogram is constructed, a histogram-based algorithm has time complexity ``O(#bins)``, and ``#bins`` is far smaller than ``#data``.
+   -  Tính toán biểu đồ tần suất có độ phức tạp thời gian là ``O(#data)``, nhưng chỉ cần một phép cộng nhanh chóng. Khi biểu đồ đã được xây dựng, thuật toán dựa trên biểu đồ tần suất có độ phức tạp thời gian là ``O(#bins)``, và ``#bins`` nhỏ hơn nhiều so với ``#data``.
 
--  **Use histogram subtraction for further speedup**
+-  **Sử dụng phép trừ biểu đồ tần suất để tăng tốc độ hơn nữa**
 
-   -  To get one leaf's histograms in a binary tree, use the histogram subtraction of its parent and its neighbor
+   -  Để lấy biểu đồ tần suất của một lá trong cây nhị phân, sử dụng phép trừ biểu đồ của cha và lá kề của nó
 
-   -  So it needs to construct histograms for only one leaf (with smaller ``#data`` than its neighbor). It then can get histograms of its neighbor by histogram subtraction with small cost (``O(#bins)``)
+   -  Vì vậy, chỉ cần xây dựng biểu đồ tần suất cho một lá (với ``#data`` nhỏ hơn lá kề). Sau đó có thể lấy biểu đồ tần suất của lá kề bằng phép trừ biểu đồ với chi phí nhỏ (``O(#bins)``)
 
--  **Reduce memory usage**
+-  **Giảm sử dụng bộ nhớ**
 
-   -  Replaces continuous values with discrete bins. If ``#bins`` is small, can use small data type, e.g. uint8\_t, to store training data
+   -  Thay thế các giá trị liên tục bằng các nhóm rời rạc. Nếu ``#bins`` nhỏ, có thể sử dụng kiểu dữ liệu nhỏ, ví dụ như uint8_t, để lưu trữ dữ liệu huấn luyện
 
-   -  No need to store additional information for pre-sorting feature values
+   -  Không cần lưu trữ thông tin bổ sung cho việc sắp xếp trước các giá trị thuộc tính
 
--  **Reduce communication cost for distributed learning**
+-  **Giảm chi phí truyền thông cho học phân tán**
 
-Sparse Optimization
+Tối ưu hóa tính thưa
 -------------------
 
--  Need only ``O(2 * #non_zero_data)`` to construct histogram for sparse features
+-  Chỉ cần ``O(2 * #non_zero_data)`` để xây dựng biểu đồ tần suất cho các thuộc tính thưa
 
-Optimization in Accuracy
+Tối ưu hóa độ chính xác
 ------------------------
 
-Leaf-wise (Best-first) Tree Growth
+Phát triển cây theo lá (Best-first)
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Most decision tree learning algorithms grow trees by level (depth)-wise, like the following image:
+Hầu hết các thuật toán học cây quyết định phát triển cây theo từng mức (depth-wise), như trong hình sau:
 
 .. image:: ./_static/images/level-wise.png
    :align: center
-   :alt: A diagram depicting level wise tree growth in which the best possible node is split one level down. The strategy results in a symmetric tree, where every node in a level has child nodes resulting in an additional layer of depth.
+   :alt: Sơ đồ minh họa sự phát triển của cây theo từng mức, trong đó nút tốt nhất có thể được chia nhỏ xuống một mức. Chiến lược này tạo ra một cây đối xứng, nơi mỗi nút trong một mức có các nút con, dẫn đến một lớp độ sâu bổ sung.
 
-LightGBM grows trees leaf-wise (best-first)\ `[7] <#references>`__. It will choose the leaf with max delta loss to grow.
-Holding ``#leaf`` fixed, leaf-wise algorithms tend to achieve lower loss than level-wise algorithms.
+LightGBM phát triển cây theo từng lá (best-first) `[7] <#references>`. Nó sẽ chọn lá có delta mất mát lớn nhất để phát triển.
+Khi giữ cố định ``#leaf``, các thuật toán phát triển theo lá thường đạt được mất mát thấp hơn so với các thuật toán phát triển theo mức.
 
-Leaf-wise may cause over-fitting when ``#data`` is small, so LightGBM includes the ``max_depth`` parameter to limit tree depth. However, trees still grow leaf-wise even when ``max_depth`` is specified.
+Phát triển theo lá có thể gây ra hiện tượng over-fitting khi ``#data`` nhỏ, vì vậy LightGBM bao gồm tham số ``max_depth`` để giới hạn độ sâu của cây. Tuy nhiên, cây vẫn sẽ phát triển theo lá ngay cả khi đã chỉ định ``max_depth``.
 
 .. image:: ./_static/images/leaf-wise.png
    :align: center
-   :alt: A diagram depicting leaf wise tree growth in which only the node with the highest loss change is split and not bother with the rest of the nodes in the same level. This results in an asymmetrical tree where subsequent splitting is happening only on one side of the tree.
+   :alt: Sơ đồ minh họa sự phát triển của cây theo từng lá, trong đó chỉ có nút có thay đổi mất mát cao nhất được chia nhỏ mà không cần quan tâm đến các nút còn lại trong cùng mức. Điều này tạo ra một cây không đối xứng, nơi việc chia nhỏ tiếp theo chỉ diễn ra ở một phía của cây.
 
-Optimal Split for Categorical Features
+Chia tối ưu cho các thuộc tính phân loại
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-It is common to represent categorical features with one-hot encoding, but this approach is suboptimal for tree learners. Particularly for high-cardinality categorical features, a tree built on one-hot features tends to be unbalanced and needs to grow very deep to achieve good accuracy.
+Thông thường, các thuộc tính phân loại được biểu diễn bằng mã hóa one-hot, nhưng phương pháp này không tối ưu cho các bộ học cây. Đặc biệt là với các thuộc tính phân loại có số hạng lớn, một cây dựa trên các thuộc tính one-hot có xu hướng không cân bằng và cần phát triển rất sâu để đạt được độ chính xác tốt.
 
-Instead of one-hot encoding, the optimal solution is to split on a categorical feature by partitioning its categories into 2 subsets. If the feature has ``k`` categories, there are ``2^(k-1) - 1`` possible partitions.
-But there is an efficient solution for regression trees\ `[8] <#references>`__. It needs about ``O(k * log(k))`` to find the optimal partition.
+Thay vì sử dụng mã hóa one-hot, giải pháp tối ưu là chia một thuộc tính phân loại bằng cách chia các danh mục của nó thành 2 tập hợp con. Nếu thuộc tính có ``k`` danh mục, có ``2^(k-1) - 1`` cách chia có thể.
+Tuy nhiên, có một giải pháp hiệu quả cho các cây hồi quy `[8] <#references>`. Nó cần khoảng ``O(k * log(k))`` để tìm được cách chia tối ưu.
 
-The basic idea is to sort the categories according to the training objective at each split.
-More specifically, LightGBM sorts the histogram (for a categorical feature) according to its accumulated values (``sum_gradient / sum_hessian``) and then finds the best split on the sorted histogram.
+Ý tưởng cơ bản là sắp xếp các danh mục theo mục tiêu huấn luyện tại mỗi lần tách.
+Cụ thể hơn, LightGBM sắp xếp histogram (đối với một đặc trưng phân loại) theo các giá trị tích lũy của nó (``sum_gradient / sum_hessian``) và sau đó tìm điểm tách tốt nhất trên histogram đã sắp xếp.
 
-Optimization in Network Communication
--------------------------------------
+Tối ưu hóa trong truyền thông mạng
+-----------------------------------
 
-It only needs to use some collective communication algorithms, like "All reduce", "All gather" and "Reduce scatter", in distributed learning of LightGBM.
-LightGBM implements state-of-the-art algorithms\ `[9] <#references>`__.
-These collective communication algorithms can provide much better performance than point-to-point communication.
+Chỉ cần sử dụng một số thuật toán truyền thông tập thể, như "All reduce", "All gather" và "Reduce scatter", trong quá trình học phân tán của LightGBM.
+LightGBM triển khai các thuật toán tiên tiến nhất\ `[9] <#references>`__.
+Các thuật toán truyền thông tập thể này có thể mang lại hiệu suất tốt hơn so với truyền thông điểm-điểm.
 
-.. _Optimization in Parallel Learning:
+.. _Tối ưu hóa trong học song song:
 
-Optimization in Distributed Learning
+Tối ưu hóa trong học phân tán
 ------------------------------------
 
-LightGBM provides the following distributed learning algorithms.
+LightGBM cung cấp các thuật toán học phân tán sau đây.
 
 Feature Parallel
 ~~~~~~~~~~~~~~~~
 
-Traditional Algorithm
+Thuật toán truyền thống
 ^^^^^^^^^^^^^^^^^^^^^
 
-Feature parallel aims to parallelize the "Find Best Split" in the decision tree. The procedure of traditional feature parallel is:
+Feature parallel nhằm mục tiêu song song hóa quá trình "Tìm điểm tách tốt nhất" trong cây quyết định. Quy trình của feature parallel truyền thống là:
 
-1. Partition data vertically (different machines have different feature set).
+1. Phân chia dữ liệu theo chiều dọc (các máy khác nhau có tập hợp đặc trưng khác nhau).
 
-2. Workers find local best split point {feature, threshold} on local feature set.
+2. Các worker tìm điểm tách tốt nhất {feature, threshold} trên tập hợp đặc trưng cục bộ.
 
-3. Communicate local best splits with each other and get the best one.
+3. Trao đổi các điểm tách cục bộ với nhau và tìm điểm tốt nhất.
 
-4. Worker with best split to perform split, then send the split result of data to other workers.
+4. Worker với điểm tách tốt nhất thực hiện tách, sau đó gửi kết quả tách của dữ liệu đến các worker khác.
 
-5. Other workers split data according to received data.
+5. Các worker khác tách dữ liệu theo dữ liệu nhận được.
 
-The shortcomings of traditional feature parallel:
+Những hạn chế của feature parallel truyền thống:
 
--  Has computation overhead, since it cannot speed up "split", whose time complexity is ``O(#data)``.
-   Thus, feature parallel cannot speed up well when ``#data`` is large.
+-  Có chi phí tính toán, vì không thể tăng tốc quá trình "tách", có độ phức tạp là ``O(#data)``.
+   Do đó, feature parallel không thể tăng tốc tốt khi ``#data`` lớn.
 
--  Need communication of split result, which costs about ``O(#data / 8)`` (one bit for one data).
+-  Cần trao đổi kết quả tách, chi phí khoảng ``O(#data / 8)`` (một bit cho một dữ liệu).
 
-Feature Parallel in LightGBM
+Feature Parallel trong LightGBM
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Since feature parallel cannot speed up well when ``#data`` is large, we make a little change: instead of partitioning data vertically, every worker holds the full data.
-Thus, LightGBM doesn't need to communicate for split result of data since every worker knows how to split data.
-And ``#data`` won't be larger, so it is reasonable to hold the full data in every machine.
+Vì feature parallel không thể tăng tốc tốt khi ``#data`` lớn, chúng tôi thực hiện một chút thay đổi: thay vì phân chia dữ liệu theo chiều dọc, mỗi worker giữ toàn bộ dữ liệu.
+Do đó, LightGBM không cần trao đổi kết quả tách của dữ liệu vì mỗi worker đều biết cách tách dữ liệu.
+Và ``#data`` không lớn hơn, vì vậy việc giữ toàn bộ dữ liệu trong mỗi máy là hợp lý.
 
-The procedure of feature parallel in LightGBM:
+Quy trình của feature parallel trong LightGBM:
 
-1. Workers find local best split point {feature, threshold} on local feature set.
+1. Các worker tìm điểm tách tốt nhất {feature, threshold} trên tập hợp đặc trưng cục bộ.
 
-2. Communicate local best splits with each other and get the best one.
+2. Trao đổi các điểm tách cục bộ với nhau và tìm điểm tốt nhất.
 
-3. Perform best split.
+3. Thực hiện điểm tách tốt nhất.
 
-However, this feature parallel algorithm still suffers from computation overhead for "split" when ``#data`` is large.
-So it will be better to use data parallel when ``#data`` is large.
+Tuy nhiên, thuật toán feature parallel này vẫn gặp phải chi phí tính toán cho quá trình "tách" khi ``#data`` lớn.
+Do đó sẽ tốt hơn nếu sử dụng data parallel khi ``#data`` lớn.
 
 Data Parallel
 ~~~~~~~~~~~~~
 
-Traditional Algorithm
+Thuật toán truyền thống
 ^^^^^^^^^^^^^^^^^^^^^
 
-Data parallel aims to parallelize the whole decision learning. The procedure of data parallel is:
+Data parallel nhằm mục tiêu song song hóa toàn bộ quá trình học quyết định. Quy trình của data parallel là:
 
-1. Partition data horizontally.
+1. Phân chia dữ liệu theo chiều ngang.
 
-2. Workers use local data to construct local histograms.
+2. Các worker sử dụng dữ liệu cục bộ để xây dựng các histogram cục bộ.
 
-3. Merge global histograms from all local histograms.
+3. Hợp nhất các histogram toàn cục từ tất cả các histogram cục bộ.
 
-4. Find best split from merged global histograms, then perform splits.
+4. Tìm điểm tách tốt nhất từ các histogram toàn cục đã hợp nhất, sau đó thực hiện tách.
 
-The shortcomings of traditional data parallel:
+Những hạn chế của data parallel truyền thống:
 
--  High communication cost.
-   If using point-to-point communication algorithm, communication cost for one machine is about ``O(#machine * #feature * #bin)``.
-   If using collective communication algorithm (e.g. "All Reduce"), communication cost is about ``O(2 * #feature * #bin)`` (check cost of "All Reduce" in chapter 4.5 at `[9] <#references>`__).
+-  Chi phí truyền thông cao.
+   Nếu sử dụng thuật toán truyền thông điểm-điểm, chi phí truyền thông cho một máy khoảng ``O(#machine * #feature * #bin)``.
+   Nếu sử dụng thuật toán truyền thông tập thể (ví dụ như "All Reduce"), chi phí truyền thông khoảng ``O(2 * #feature * #bin)`` (kiểm tra chi phí của "All Reduce" trong chương 4.5 tại `[9] <#references>`__).
 
-Data Parallel in LightGBM
+Data Parallel trong LightGBM
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-We reduce communication cost of data parallel in LightGBM:
+Chúng tôi giảm chi phí truyền thông của data parallel trong LightGBM:
 
-1. Instead of "Merge global histograms from all local histograms", LightGBM uses "Reduce Scatter" to merge histograms of different (non-overlapping) features for different workers.
-   Then workers find the local best split on local merged histograms and sync up the global best split.
+1. Thay vì "Hợp nhất các histogram toàn cục từ tất cả các histogram cục bộ", LightGBM sử dụng "Reduce Scatter" để hợp nhất các histogram của các đặc trưng khác nhau (không trùng lặp) cho các worker khác nhau.
+   Sau đó các worker tìm điểm tách tốt nhất cục bộ trên các histogram đã hợp nhất và đồng bộ hóa điểm tách tốt nhất toàn cục.
 
-2. As aforementioned, LightGBM uses histogram subtraction to speed up training.
-   Based on this, we can communicate histograms only for one leaf, and get its neighbor's histograms by subtraction as well.
+2. Như đã đề cập trước đó, LightGBM sử dụng phép trừ histogram để tăng tốc quá trình huấn luyện.
+   Dựa trên điều này, chúng ta có thể chỉ cần truyền thông các histogram cho một leaf, và lấy histogram của lá kế cận bằng phép trừ.
 
-All things considered, data parallel in LightGBM has time complexity ``O(0.5 * #feature * #bin)``.
+Tổng quan, data parallel trong LightGBM có độ phức tạp tính toán là ``O(0.5 * #feature * #bin)``.
 
 Voting Parallel
 ~~~~~~~~~~~~~~~
 
-Voting parallel further reduces the communication cost in `Data Parallel <#data-parallel>`__ to constant cost.
-It uses two-stage voting to reduce the communication cost of feature histograms\ `[10] <#references>`__.
+Voting parallel tiếp tục giảm chi phí truyền thông trong `Data Parallel <#data-parallel>`__ xuống chi phí cố định.
+Nó sử dụng quy trình bỏ phiếu hai giai đoạn để giảm chi phí truyền thông của các histogram đặc trưng\ `[10] <#references>`__.
 
-GPU Support
+Hỗ trợ GPU
 -----------
 
-Thanks `@huanzhang12 <https://github.com/huanzhang12>`__ for contributing this feature. Please read `[11] <#references>`__ to get more details.
+Cảm ơn `@huanzhang12 <https://github.com/huanzhang12>`__ đã đóng góp tính năng này. Vui lòng đọc `[11] <#references>`__ để biết thêm chi tiết.
 
-- `GPU Installation <./Installation-Guide.rst#build-gpu-version>`__
+- `Cài đặt GPU <./Installation-Guide.rst#build-gpu-version>`__
 
-- `GPU Tutorial <./GPU-Tutorial.rst>`__
+- `Hướng dẫn GPU <./GPU-Tutorial.rst>`__
 
-Applications and Metrics
+Ứng dụng và Các Metric
 ------------------------
 
-LightGBM supports the following applications:
+LightGBM hỗ trợ các ứng dụng sau:
 
--  regression, the objective function is L2 loss
+-  hồi quy, hàm mục tiêu là L2 loss
 
--  binary classification, the objective function is logloss
+-  phân loại nhị phân, hàm mục tiêu là logloss
 
--  multi classification
+-  phân loại đa lớp
 
--  cross-entropy, the objective function is logloss and supports training on non-binary labels
+-  cross-entropy, hàm mục tiêu là logloss và hỗ trợ huấn luyện trên các nhãn không phải nhị phân
 
--  LambdaRank, the objective function is LambdaRank with NDCG
+-  LambdaRank, hàm mục tiêu là LambdaRank với NDCG
 
-LightGBM supports the following metrics:
+LightGBM hỗ trợ các metric sau:
 
 -  L1 loss
 
@@ -197,7 +197,7 @@ LightGBM supports the following metrics:
 
 -  Log loss
 
--  Classification error rate
+-  Tỉ lệ lỗi phân loại
 
 -  AUC
 
@@ -207,11 +207,11 @@ LightGBM supports the following metrics:
 
 -  Multi-class log loss
 
--  Multi-class error rate
+-  Tỉ lệ lỗi đa lớp
 
--  AUC-mu ``(new in v3.0.0)``
+-  AUC-mu ``(mới trong v3.0.0)``
 
--  Average precision ``(new in v3.1.0)``
+-  Average precision ``(mới trong v3.1.0)``
 
 -  Fair
 
@@ -229,12 +229,12 @@ LightGBM supports the following metrics:
 
 -  Tweedie
 
-For more details, please refer to `Parameters <./Parameters.rst#metric-parameters>`__.
+Để biết thêm chi tiết, vui lòng tham khảo `Parameters <./Parameters.rst#metric-parameters>`__.
 
-Other Features
+Các Tính Năng Khác
 --------------
 
--  Limit ``max_depth`` of tree while grows tree leaf-wise
+-  Giới hạn ``max_depth`` của cây trong khi phát triển cây theo chiều lá
 
 -  `DART <https://arxiv.org/abs/1505.01866>`__
 
@@ -242,25 +242,26 @@ Other Features
 
 -  Bagging
 
--  Column (feature) sub-sample
+-  Cắt giảm cột (đặc trưng)
 
--  Continued train with input GBDT model
+-  Tiếp tục huấn luyện với mô hình GBDT đầu vào
 
--  Continued train with the input score file
+-  Tiếp tục huấn luyện với tệp điểm đầu vào
 
--  Weighted training
+-  Huấn luyện có trọng số
 
--  Validation metric output during training
+-  Đầu ra metric đánh giá trong quá trình huấn luyện
 
--  Multiple validation data
+-  Hỗ trợ nhiều dữ liệu đánh giá
 
--  Multiple metrics
+-  Hỗ trợ nhiều metric
 
--  Early stopping (both training and prediction)
+-  Dừng sớm (cả trong huấn luyện và dự đoán)
 
--  Prediction for leaf index
+-  Dự đoán cho chỉ số lá
 
-For more details, please refer to `Parameters <./Parameters.rst>`__.
+Để biết thêm chi tiết, vui lòng tham khảo `Parameters <./Parameters.rst>`__.
+
 
 References
 ----------
